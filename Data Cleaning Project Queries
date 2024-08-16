@@ -1,0 +1,283 @@
+-- DATA CLEANING SQL
+
+-- Download the dataset you want to use.
+-- Click on the tab to create a new database/schema, name it in the pop-up. Apply
+-- Click on the drop down of the new db, right click on table, table data import wizard, browse, pick the downloaded dataset, create a new table, next, the next pop-up will show the data in the dataset and the types, mysql will automatically assign a data type based off of the data in the columns. You can change the data type if you so wish or can leave it to do later, then next; this will import the data.
+
+SELECT *
+FROM layoffs;
+
+--- 1. Remove Duplicates
+--- 2. Standardize the data (this is if there are issues with the data, with spellings or things
+--- 3. Null values or blank values
+--- 4. Remove any column that aren’t necessary. (there are times to do this and not to. If you are working with massive dataset and don’t have any ETL planned for it, then, you can get rid of it. If you remove a column from a raw data set, that will be a big problem. 
+
+-- We will now create a new table from the one we have where we will go through the necessary stages, so we can call this, layoffs_staging.
+-- We will copy all the data from the raw to the staging table. 
+
+CREATE TABLE layoffs_staging
+LIKE layoffs; 
+
+-- Refresh schema for the new table to show. 
+
+SELECT *
+FROM layoffs_staging;
+
+-- Running the above will give us all the columns in the original table, we now need to input data in there;
+
+INSERT layoffs_staging
+SELECT *
+FROM layoffs;
+
+
+SELECT *
+FROM layoffs_staging;
+
+-- This will give us everything in the layoff which is also now in layoff_staging
+
+-- We are doing this cz we will be changing the new table a lot and we don’t want to tamper with the original table. At your work place, don’t work on your real data, better you do something like this. 
+
+-- 1.	Identify and Remove duplicates 
+-- We create a row number and match it with each of the columns, and then see if any duplicate.
+
+SELECT *,
+ROW_NUMBER() OVER(
+PARTITION BY company, industry, total_laid_off, percentage_laid_off, date) AS row_num
+FROM layoffs_staging;
+
+-- We can then filter based on the row numbers generated, if 2 or greater than 2, that means there is a duplicate.
+
+-- We then create a CTE;
+WITH duplicate_cte AS
+(
+SELECT *,
+ROW_NUMBER() OVER(
+PARTITION BY company, industry, total_laid_off, percentage_laid_off, date) AS row_num
+FROM layoffs_staging
+)
+SELECT *
+FROM duplicate_cte
+WHERE row_num > 1;
+
+-- To confirm the duplicate, we check for each one;
+
+SELECT *
+FROM layoffs_staging
+WHERE company = 'oda' ;
+
+-- From the output, we see that they are only relatively close and not duplicates.
+-- We will repeat this for each of the column so to be sure of the duplicate. 
+
+-- We check for all the columns now;
+
+WITH duplicate_cte AS
+(
+SELECT *,
+ROW_NUMBER() OVER(
+PARTITION BY company, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions  ) AS row_num
+FROM layoffs_staging
+)
+SELECT *
+FROM duplicate_cte
+WHERE row_num > 1;
+
+-- We will therefore want to remove the duplicate and not both of them. 
+-- What we now do is to create another table that has this extra row, and deleting it where that row equals 2. 
+
+-- We right click on the layoffs_staging, copy to Clipboard, create statement or we can write it out by ourselves.
+-- We now add a new column; ‘row_num’ INT
+
+CREATE TABLE `layoffs_staging2` (
+`company` text,
+`location`text,
+`industry`text,
+`total_laid_off` INT,
+`percentage_laid_off` text,
+`date` text,
+`stage`text,
+`country` text,
+`funds_raised_millions` int,
+row_num INT
+); 
+
+-- We then run this to check its up before we start populating it;
+SELECT *
+FROM layoffs_staging2;
+
+INSERT INTO layoffs_staging2
+SELECT *,
+ROW_NUMBER() OVER(
+PARTITION BY company, industry, total_laid_off, percentage_laid_off, date, stage, country, funds_raised_millions  ) AS row_num
+FROM layoffs_staging;
+
+-- We then do this to check the ones whose row number is more than 1;
+SELECT *
+FROM layoffs_staging2
+WHERE row_num > 1;
+
+-- We are now going to delete;
+
+ DELETE 
+FROM layoffs_staging2
+WHERE row_num > 1;
+
+
+-- Its much easier to remove a column say we have a unique column in our table, we wont need to go around all these.
+
+-- STANDARDIZING DATA
+-- This is finding issues in your data and fixing it.
+
+
+SELECT *
+FROM layoffs_staging2
+UPDATE layoffs_staging2
+SET company = TRIM(company);
+
+SELECT industry
+FROM layoffs_staging2;
+
+-- From our output, we observed we have lots of blanks, so we do order by;
+
+SELECT DISTINCT industry
+FROM layoffs_staging2
+ORDER BY 1;
+
+-- In the output, we have crypto, cryptocurrency, crypto currency and all these are one, so we need to make sure that we stick to just one of these. We need to change this cz when we start doing the exploratory data analysis visualizing, these would all be their own rows or own unique which we don’t want them to be. 
+-- We will change all of them to crypto.
+
+SELECT *
+FROM layoffs_staging2
+WHERE industry LIKE 'crypto';
+
+UPDATE layoffs_staging2
+SET industry = 'Crypto'
+WHERE industry LIKE 'Crypto%';
+
+-- Just to confirm;
+SELECT *
+FROM layoffs_staging2
+WHERE industry LIKE 'crypto%';
+
+SELECT *
+FROM layoffs_staging2
+WHERE industry LIKE 'crypto%';
+ 
+
+-- This will give us the distinct industries and we see if our changes are effected.
+
+SELECT DISTINCT industry
+FROM layoffs_staging2;
+
+-- Industry, occupation done, next is location.
+
+SELECT DISTINCT(location)
+FROM layoffs_staging2
+ORDER BY 1;
+
+SELECT *
+FROM layoffs_staging2;
+
+-- We have two united states, one is united states and the second is united states. We need to fix this.
+
+SELECT *
+FROM layoffs_staging2
+WHERE country LIKE "United_States%" 
+ORDER BY 1;
+
+SELECT DISTINCT country, TRIM(country)
+FROM layoffs_staging2
+ORDER BY 1;
+
+-- The united states has a full stop at the end and the above code did not fix it.
+
+
+SELECT DISTINCT country, TRIM(TRAILING '.' FROM country)
+FROM layoffs_staging2
+ORDER BY 1;
+
+-- What’s the trailing in this case? It’s the period. 
+
+-- We then update it;
+
+UPDATE layoffs_staging2
+SET country = TRIM(TRAILING '.' FROM country)
+WHERE country LIKE 'United States%'; 
+
+SELECT DISTINCT country
+FROM layoffs_staging2
+WHERE country LIKE 'United States%'
+ORDER BY 1;
+
+SELECT DISTINCT country, TRIM(TRAILING '.' FROM country)
+FROM layoffs_staging2
+ORDER BY 1;
+
+-- We need to change the date as its currently text and this wont work when we are doing our visualization
+
+-- Go to the layoffs_staging2 at the left side , click the drop down, columns, date , when we click on the date, we will see that its text, this shouldn’t be.
+
+-- To change the date from text;
+
+SELECT date
+FROM layoffs_staging2;
+-- We want to format it as month, day, year.
+
+SELECT date,
+STR_TO_DATE()
+FROM layoffs_staging2;
+
+-- The Y is for the year which covers the four numbers.
+
+SELECT date,
+STR_TO_DATE(date, '%m/%d/%Y')
+FROM layoffs_staging2;
+
+UPDATE layoffs_staging2
+SET date = STR_TO_DATE(date, '%m/%d/%Y');
+
+SELECT date
+FROM layoffs_staging2;
+
+--  When we refresh at the left side, it will still show text but the date is in proper format now. 
+-- Now that we have changed the way the date is, we can change the format, never do this on your main table but like staging table. 
+
+ALTER TABLE layoffs_staging2
+MODIFY COLUMN date DATE;
+
+-- WE refresh the top side at the left side pane, click on the date and we will see it has changed to date and no longer text. 
+
+-- DEALING WITH NULLS
+SELECT *
+FROM layoffs_staging2
+WHERE total_laid_off IS NULL
+AND percentage_laid_off IS NULL;
+
+-- The industry column has some missing values(blank)  and null too.
+
+SELECT DISTINCT industry
+FROM layoffs_staging2
+WHERE industry IS NULL
+OR industry = ' ';
+
+SELECT *
+FROM layoffs_staging2
+WHERE industry IS NULL
+OR industry = ' ';
+
+SELECT *
+FROM layoffs_staging2;
+
+-- We can try to see if any of these can be populated; under the industry, for Airbnb, we have blank, then, when we run this, we see that we have one that is blank and we have another that’s also Airbnb that has a value, ‘Travel’, this means we can use that to populate the one that is blank.
+-- It has one that is blank and another that isn’t blank, so we join the (same) table(s) together. 
+
+
+SELECT *
+FROM layoffs_staging2 t1
+JOIN layoffs_staging2 t2
+	ON t1.company = t2.company
+WHERE (t1.industry IS NULL OR t1.industry = ' ')
+AND t2.industry IS NOT NULL;
+
+-- Company is the same which is Airbnb, that’s why we can use them like that. 
+
+
